@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticatie: Geanimeerde Vlag Hijsen (Opgelost)</title>
+    <style>
+        /* Algemene Styling */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f0f0f5; 
+            color: #333;
+        }
+
+        /* Container en Status */
+        #main-container {
+            text-align: center;
+            padding: 40px;
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            max-width: 450px;
+            width: 90%;
+        }
+
+        #game-area {
+            display: none; 
+            padding-top: 20px;
+        }
+
+        /* Vlaggenmast Gebied */
+        #flagpole-area {
+            position: relative;
+            width: 80px;
+            height: 350px;
+            margin: 30px auto 40px;
+            border-bottom: 5px solid #333; 
+        }
+
+        /* De Vlaggenmast (Paal) */
+        #mast {
+            position: absolute;
+            left: 50%;
+            width: 10px;
+            height: 100%;
+            background-color: #333;
+            transform: translateX(-50%);
+            border-radius: 5px 5px 0 0;
+        }
+
+        /* De Doelzone (Dynamische positie) */
+        .target-zone {
+            position: absolute;
+            left: 50%;
+            width: 50px;
+            height: 45px; 
+            background-color: rgba(46, 204, 113, 0.5); 
+            border: 2px solid #2ecc71;
+            transform: translateX(-50%);
+            z-index: 2;
+        }
+        
+        /* De Vlag (het bewegende object) */
+        #flag {
+            position: absolute;
+            left: 10px;
+            width: 60px;
+            height: 40px;
+            /* --- HIER KUNT U DE VLAG AFBEELDING AANPASSEN --- */
+            /* Dit gebruikt een placeholder, vervang de URL met uw eigen vlagafbeelding */
+            background: url('https://github.com/PlasmaStarStudios/scoutingBonifas_giowhaioshgaislhgwailhsgioawgahasj/blob/main/image-removebg-preview%20(1).png?raw=true') center/cover no-repeat;
+            border: 1px solid #333;
+            bottom: 0; 
+            z-index: 3;
+            transition: bottom 0.1s linear, background-color 0.3s; 
+        }
+
+        /* De Bedieningsknop */
+        #pull-button {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none; 
+        }
+
+        #pull-button:active {
+            background-color: #2980b9;
+        }
+        
+        #pull-button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        /* Statusinformatie */
+        #status-message {
+            margin-top: 15px;
+            font-weight: bold;
+            min-height: 20px;
+        }
+
+        .correct-placement {
+            box-shadow: 0 0 10px #2ecc71;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="main-container">
+        <div id="auth-status">Laden...</div>
+        
+        <div id="game-area">
+            <h1>🇳🇱 Vlag Hijsen Puzzel</h1>
+            <p>Hijs de vlag in de drie doelzones. **Klik snel** om te hijsen en **stop op tijd**!</p>
+            
+            <div id="round-status">Rondes Gewonnen: <span id="win-counter" style="color: #27ae60; font-weight: bold;">0 / 3</span></div>
+
+            <div id="flagpole-area">
+                <div id="mast"></div>
+                <!-- De doelzone wordt hier dynamisch geplaatst -->
+                <div id="flag"></div>
+            </div>
+
+            <div id="status-message">Klik op HIJS om te beginnen.</div>
+            <button id="pull-button">HIJS</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuratie ---
+        const CORRECT_PIN = "9285"; 
+        const redirectUrl = "https://chat.whatsapp.com/DuAUObZDlAnGRHxQxcMAmY?mode=hqrt3";
+        const WIN_ROUNDS = 3;
+        
+        // De snelheid waarmee de vlag per klik beweegt (in pixels)
+        const PIXELS_PER_CLICK = 15; 
+        
+        // De verticale ruimte die de doelzone inneemt
+        const ZONE_HEIGHT = 45; 
+        
+        // De bruikbare hoogte van de mast
+        const MAST_HEIGHT_USABLE = 350; // Hoogte van de #flagpole-area
+
+        // --- DOM Elementen ---
+        const authStatusDiv = document.getElementById('auth-status');
+        const gameAreaDiv = document.getElementById('game-area');
+        const statusMessage = document.getElementById('status-message');
+        const winCounterSpan = document.getElementById('win-counter');
+        const pullButton = document.getElementById('pull-button');
+        const flag = document.getElementById('flag');
+        const flagpoleArea = document.getElementById('flagpole-area');
+
+        // --- Game State ---
+        let currentWins = 0;
+        let isGameRunning = false;
+        let targetZoneDiv = null; 
+        
+        // Nieuwe variabelen voor consistente 'bottom' coördinaten
+        let targetBottomMin = 0; 
+        let targetBottomMax = 0; 
+
+        // --- Hulp Functies ---
+
+        /** Genereert een willekeurige doelzone */
+        function createTargetZone() {
+            if (targetZoneDiv) {
+                flagpoleArea.removeChild(targetZoneDiv);
+            }
+
+            const flagHeight = flag.offsetHeight; 
+            const zoneVisualHeight = ZONE_HEIGHT; 
+            
+            // 1. Bepaal een willekeurige TOP positie van de ZONE (gemeten vanaf de TOP van de mast)
+            const minTopVisual = 50; 
+            const maxTopVisual = MAST_HEIGHT_USABLE - zoneVisualHeight - 50; 
+            
+            if (minTopVisual >= maxTopVisual) {
+                console.error("Fout: Doelzone kan niet correct worden geplaatst.");
+                return;
+            }
+
+            const randomTopVisual = Math.floor(Math.random() * (maxTopVisual - minTopVisual + 1)) + minTopVisual;
+            
+            // 2. Vertaal dit naar de 'bottom' coördinaten voor game logica
+            
+            // targetBottomMax: Vlag is correct op de hoogste plek (bovenkant van de zone)
+            // De 'bottom' waarde wanneer de top van de VLAG samenvalt met de top van de ZONE
+            targetBottomMax = MAST_HEIGHT_USABLE - randomTopVisual - flagHeight;
+
+            // targetBottomMin: Vlag is correct op de laagste plek (onderkant van de zone)
+            // De 'bottom' waarde wanneer de onderkant van de VLAG samenvalt met de onderkant van de ZONE
+            const zoneBottomVisual = randomTopVisual + zoneVisualHeight;
+            targetBottomMin = MAST_HEIGHT_USABLE - zoneBottomVisual;
+
+
+            // 3. Creëer en plaats de visuele zone
+            targetZoneDiv = document.createElement('div');
+            targetZoneDiv.className = 'target-zone';
+            targetZoneDiv.style.top = `${randomTopVisual}px`;
+            flagpoleArea.appendChild(targetZoneDiv);
+            targetZoneDiv.style.backgroundColor = 'rgba(46, 204, 113, 0.5)'; // Reset kleur
+        }
+
+        /** Bepaalt of de vlag binnen de zone valt (gebruikt 'bottom' posities) */
+        function isInTargetZone(currentBottom) {
+            // De vlag moet tussen de min en max 'bottom' waarden liggen.
+            return (
+                currentBottom >= targetBottomMin && 
+                currentBottom <= targetBottomMax
+            );
+        }
+
+        // --- Game Functies ---
+
+        function checkAuthentication() {
+            const storedPin = localStorage.getItem("AUTHENTICATED");
+            if (storedPin === CORRECT_PIN) {
+                authStatusDiv.style.display = 'none';
+                gameAreaDiv.style.display = 'block';
+                resetRound();
+            } else {
+                authStatusDiv.innerHTML = `<div class="denied"><h1>🛑 Toegang Geweigerd</h1><p>Authenticatie mislukt. De puzzel is niet beschikbaar.</p></div>`;
+                gameAreaDiv.style.display = 'none';
+            }
+        }
+
+        /** Reset de vlag en genereert een nieuwe doelzone */
+        function resetRound() {
+            if (currentWins >= WIN_ROUNDS) return;
+
+            flag.style.bottom = '0px';
+            flag.classList.remove('correct-placement');
+            pullButton.disabled = false;
+            pullButton.textContent = "HIJS";
+            
+            createTargetZone(); 
+
+            statusMessage.textContent = "Ronde " + (currentWins + 1) + ". Klik om de vlag te hijsen in de groene zone.";
+            winCounterSpan.textContent = `${currentWins} / ${WIN_ROUNDS}`;
+            isGameRunning = true;
+        }
+
+        /** Verwerk de klik (muis of touch) */
+        function handlePullClick() {
+            if (!isGameRunning || pullButton.disabled) return;
+
+            let currentBottom = parseInt(flag.style.bottom) || 0;
+            let newBottom = currentBottom + PIXELS_PER_CLICK;
+            
+            // 1. Controleer op te hoog (voorbij de top van de mast)
+            if (newBottom > MAST_HEIGHT_USABLE - flag.offsetHeight) {
+                newBottom = MAST_HEIGHT_USABLE - flag.offsetHeight;
+                flag.style.bottom = newBottom + 'px'; 
+                handleRoundEnd(false, "TE HOOG! De vlag is voorbij de top van de mast.");
+                return;
+            }
+            
+            // 2. Pas de nieuwe positie toe
+            flag.style.bottom = newBottom + 'px';
+
+            // 3. Controleer op Succes (In de zone gestopt)
+            if (isInTargetZone(newBottom)) {
+                handleRoundEnd(true);
+                return;
+            } 
+            
+            // 4. Controleer op Mislukking (Voortgeklikt voorbij de zone)
+            if (newBottom > targetBottomMax) {
+                // Vlag is te ver door de zone heen gegaan
+                handleRoundEnd(false, "TE VER! U klikte voorbij de zone.");
+                return;
+            }
+            
+            // 5. Update status
+            const percentage = Math.round((newBottom / targetBottomMax) * 100);
+            statusMessage.textContent = `Hoger! De vlag is nu op ${Math.min(100, percentage)}% van het doel. Klik verder!`;
+        }
+
+        /** Verwerk het einde van een ronde */
+        function handleRoundEnd(isSuccess, errorMessage = "") {
+            isGameRunning = false;
+            pullButton.disabled = true;
+
+            if (isSuccess) {
+                currentWins++;
+                flag.classList.add('correct-placement');
+                targetZoneDiv.style.backgroundColor = '#2ecc71'; 
+                statusMessage.textContent = `✅ PERFECT! Ronde ${currentWins} voltooid!`;
+
+                if (currentWins >= WIN_ROUNDS) {
+                    winGame();
+                } else {
+                    setTimeout(resetRound, 1500); 
+                }
+            } else {
+                // Fout
+                flag.style.backgroundColor = '#e74c3c'; 
+                statusMessage.textContent = `❌ MISLUKT: ${errorMessage || "Probeer de volgende ronde nauwkeuriger te stoppen."}`;
+                setTimeout(resetRound, 1500); 
+            }
+        }
+
+        /** Spel gewonnen */
+        function winGame() {
+            isGameRunning = false;
+            pullButton.style.display = 'none';
+            statusMessage.innerHTML = `<span style="color: #2ecc71; font-size: 1.3em;">VLAG GEHIJSD! TOEGANG VERKREGEN.</span>`;
+            document.body.style.backgroundColor = '#1e8449'; 
+
+            setTimeout(() => {
+                window.location.replace(redirectUrl);
+            }, 3000);
+        }
+
+        // --- Event Listeners ---
+        pullButton.addEventListener('click', handlePullClick);
+
+        // --- Start de Authenticatie Controle wanneer de pagina laadt ---
+        checkAuthentication();
+    </script>
+
+</body>
+</html>
